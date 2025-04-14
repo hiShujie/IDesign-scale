@@ -1,7 +1,7 @@
 # IDesign
 It's an updated version of [*I-Design: Personalized LLM Interior Designer*](https://atcelen.github.io/I-Design/) that can process multiple prompts 🎊**in one run**🎊.
 
-> Following are from the instructions of [I-Design](https://atcelen.github.io/I-Design/).
+> Following are adapted from the instructions of [I-Design](https://atcelen.github.io/I-Design/).
 ## Requirements
 Install the requirements
 ```bash

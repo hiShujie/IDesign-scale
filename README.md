@@ -1,6 +1,7 @@
 # IDesign
-This is the official Github Repo for [*I-Design: Personalized LLM Interior Designer*](https://atcelen.github.io/I-Design/)
+It's an updated version of [*I-Design: Personalized LLM Interior Designer*](https://atcelen.github.io/I-Design/) that can process multiple prompts 🎊**in one run**🎊.
 
+> Following are from the instructions of [I-Design](https://atcelen.github.io/I-Design/).
 ## Requirements
 Install the requirements
 ```bash
@@ -30,36 +31,15 @@ Create the "OAI_CONFIG_LIST.json" file
 ]
 ```
 ## Inference
-Create the scene graph and allocate coordinate positions
-```python
-from IDesign import IDesign
 
-i_design = IDesign(no_of_objects = 15, 
-                   user_input = "A creative livingroom", 
-                   room_dimensions = [4.0, 4.0, 2.5])
-
-# Interior Designer, Interior Architect and Engineer 
-i_design.create_initial_design()
-# Layout Corrector
-i_design.correct_design()
-# Layout Refiner
-i_design.refine_design()
-# Backtracking Algorithm
-i_design.create_object_clusters(verbose=False)
-i_design.backtrack(verbose=True)
-i_design.to_json()
+Complete the retrieval environment building in advance. Retrieve the 3D assets from Objaverse using OpenShape
 ```
-
-Retrieve the 3D assets from Objaverse using OpenShape
-```bash
 git clone https://huggingface.co/OpenShape/openshape-demo-support
 cd openshape-demo-support
 pip install -e .
 cd ..
-python retrieve.py
 ```
-
-Place the assets using the Blender Scripting Module using the script in the *place_in_blender.py* file
+**Add the prompt you want to run in `prompt.txt` and run IDesign.sh!**
 
 ## Evaluation
 After creating scene renders in Blender, you can use the GPT-V evaluator to generate grades for evaluation. Fill in the necessary variables denoted with TODO and run the script

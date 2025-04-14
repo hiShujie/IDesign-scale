@@ -6,6 +6,11 @@ from autogen.agentchat.assistant_agent import AssistantAgent
 from copy import deepcopy
 from jsonschema import validate
 import json
+import os
+import sys
+
+# 添加当前目录到Python路径
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from schemas import layout_refiner_schema
 from agents import is_termination_msg
@@ -38,9 +43,9 @@ class JSONSchemaAgent(UserProxyAgent):
         return feedback
 
 config_list_gpt4 = autogen.config_list_from_json(
-    "OAI_CONFIG_LIST.json",
+    "/home/shujie/greatlearning/scene_loop/IDesign/OAI_CONFIG_LIST.json",
     filter_dict={
-        "model": ["gpt-4-1106-preview"],
+        "model": ["gpt-4o-2024-08-06"],
     },
 )
 

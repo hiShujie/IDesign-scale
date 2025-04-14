@@ -42,11 +42,11 @@ def load_openclip():
     print("Locking...")
     sys.clip_move_lock = threading.Lock()
     print("Locked.")
-    clip_model, clip_prep = transformers.CLIPModel.from_pretrained(
+    clip_model = transformers.CLIPModel.from_pretrained(
         "laion/CLIP-ViT-bigG-14-laion2B-39B-b160k",
-        low_cpu_mem_usage=True, torch_dtype=half,
-        offload_state_dict=True,
-    ), transformers.CLIPProcessor.from_pretrained("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k")
+        torch_dtype=torch.float32
+    )
+    clip_prep = transformers.CLIPProcessor.from_pretrained("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k")
     if torch.cuda.is_available():
         with sys.clip_move_lock:
             clip_model.cuda()
@@ -94,30 +94,41 @@ half = torch.float16 if torch.cuda.is_available() else torch.bfloat16
 clip_model, clip_prep = load_openclip()
 torch.set_grad_enabled(False)
 
-file_path = "scene_graph.json"
-
-with open(file_path, "r") as file:
-    objects_in_room = json.load(file)
+def main():
+    if len(sys.argv) != 3:
+        print("Usage: python retrieve.py <scene_graph_file> <destination_folder>")
+        sys.exit(1)
+        
+    scene_graph_file = sys.argv[1]
+    destination_folder = sys.argv[2]
     
-for obj_in_room in objects_in_room:
-    if "style" in obj_in_room and "material" in obj_in_room:
-        style, material = obj_in_room['style'], obj_in_room["material"]
-    else:
-        continue
-    text = preprocess("A high-poly " + obj_in_room['new_object_id']) + f" with {material} material and in {style} style, high quality"
-    device = clip_model.device
-    tn = clip_prep(
-        text=[text], return_tensors='pt', truncation=True, max_length=76
-    ).to(device)
-    enc = clip_model.get_text_features(**tn).float().cpu()
-    retrieved_obj = retrieve(enc, top=1, sim_th=0.1, filter_fn=get_filter_fn())[0]
-    print("Retrieved object: ", retrieved_obj["u"])
-    processes = multiprocessing.cpu_count()
-    objaverse_objects = objaverse.load_objects(
-        uids=[retrieved_obj['u']],
-        download_processes=processes
-    )
-    destination_folder = os.path.join(os.getcwd(), f"Assets/")
-    if not os.path.exists(destination_folder):
-        os.makedirs(destination_folder)
-    move_files(objaverse_objects, destination_folder, obj_in_room['new_object_id'])
+    # 确保目标文件夹存在
+    os.makedirs(destination_folder, exist_ok=True)
+    
+    with open(scene_graph_file, "r") as file:
+        objects_in_room = json.load(file)
+    
+    for obj_in_room in objects_in_room:
+        if "style" in obj_in_room and "material" in obj_in_room:
+            style, material = obj_in_room['style'], obj_in_room["material"]
+        else:
+            continue
+        text = preprocess("A high-poly " + obj_in_room['new_object_id']) + f" with {material} material and in {style} style, high quality"
+        device = clip_model.device
+        tn = clip_prep(
+            text=[text], return_tensors='pt', truncation=True, max_length=76
+        )
+        # 只转换设备，不改变数据类型
+        tn = {k: v.to(device) for k, v in tn.items()}
+        enc = clip_model.get_text_features(**tn).float().cpu()
+        retrieved_obj = retrieve(enc, top=1, sim_th=0.1, filter_fn=get_filter_fn())[0]
+        print("Retrieved object: ", retrieved_obj["u"])
+        processes = multiprocessing.cpu_count()
+        objaverse_objects = objaverse.load_objects(
+            uids=[retrieved_obj['u']],
+            download_processes=processes
+        )
+        move_files(objaverse_objects, destination_folder, obj_in_room['new_object_id'])
+
+if __name__ == "__main__":
+    main()

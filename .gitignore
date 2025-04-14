@@ -1,3 +1,10 @@
 __pycache__/
 .cache/
 OAI_CONFIG_LIST.json
+assets/
+results/
+scene_graph/
+openshape-demo-support/
+OpenShape-Embeddings/
+archieve/
+use.sh

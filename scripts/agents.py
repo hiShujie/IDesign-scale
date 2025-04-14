@@ -5,21 +5,27 @@ from autogen.agentchat.assistant_agent import AssistantAgent
 import json
 from jsonschema import validate
 from copy import deepcopy
+import os
+import sys
 
+# 添加当前目录到Python路径
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# 修改导入路径
 from schemas import initial_schema, interior_architect_schema, interior_designer_schema, engineer_schema
 
 config_list_gpt4_prev = autogen.config_list_from_json(
-    "OAI_CONFIG_LIST.json",
+    "/home/shujie/greatlearning/scene_loop/IDesign/OAI_CONFIG_LIST.json",
     filter_dict={
-        "model": ["gpt-4-1106-preview"],
+        "model": ["gpt-4o-2024-08-06"],
     },
 )
 
 # OAI_CONFIG_LIST.json is needed! Check the Autogen repo for more info!
 config_list_gpt4 = autogen.config_list_from_json(
-    "OAI_CONFIG_LIST.json",
+    "/home/shujie/greatlearning/scene_loop/IDesign/OAI_CONFIG_LIST.json",
     filter_dict={
-        "model": ["gpt-4"],
+        "model": ["gpt-4o-2024-08-06"],
     },
 )
 

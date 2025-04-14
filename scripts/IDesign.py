@@ -2,19 +2,26 @@ from autogen import GroupChatManager
 import json
 import re
 import networkx as nx
+import sys
+import os
+
+# 添加当前目录到Python路径
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from agents import create_agents
 from agents import is_termination_msg, gpt4_config
 from corrector_agents import get_corrector_agents
 from refiner_agents import get_refiner_agents
-
-from chats import GroupChat, ChatWithEngineer, LayoutCorrectorGroupChat, ObjectDeletionGroupChat, LayoutRefinerGroupChat 
-
-from utils import get_room_priors, extract_list_from_json
-from utils import preprocess_scene_graph, build_graph, remove_unnecessary_edges, handle_under_prepositions, get_conflicts, get_size_conflicts, get_object_from_scene_graph
-from utils import get_object_from_scene_graph, get_rotation, get_cluster_objects, clean_and_extract_edges
-from utils import get_cluster_size
-from utils import get_possible_positions, is_point_bbox, calculate_overlap, get_topological_ordering, place_object, get_depth, get_visualization
+from chats import GroupChat, ChatWithEngineer, LayoutCorrectorGroupChat, ObjectDeletionGroupChat, LayoutRefinerGroupChat
+from utils import (
+    get_room_priors, extract_list_from_json,
+    preprocess_scene_graph, build_graph, remove_unnecessary_edges,
+    handle_under_prepositions, get_conflicts, get_size_conflicts,
+    get_object_from_scene_graph, get_rotation, get_cluster_objects,
+    clean_and_extract_edges, get_cluster_size,
+    get_possible_positions, is_point_bbox, calculate_overlap,
+    get_topological_ordering, place_object, get_depth, get_visualization
+)
 
 class IDesign:
     def __init__(self, no_of_objects, user_input, room_dimensions):
@@ -204,6 +211,28 @@ class IDesign:
                 print(f"The children objects are '{prep}' the parent object")
                 print("\n")
 
+        # 创建有向图来检测循环依赖
+        G = nx.DiGraph()
+        for parent_id, prep, obj_names in inputs:
+            for obj in obj_names:
+                G.add_edge(parent_id, obj)
+
+        # 检测循环依赖
+        cycles = list(nx.simple_cycles(G))
+        if cycles:
+            if verbose:
+                print("发现循环依赖:")
+                for cycle in cycles:
+                    print(f"循环: {cycle}")
+        
+            # 处理循环依赖
+            for cycle in cycles:
+                # 移除最后一个边来打破循环
+                if len(cycle) > 1:
+                    if G.has_edge(cycle[-2], cycle[-1]):  # 添加边的存在性检查
+                        G.remove_edge(cycle[-2], cycle[-1])
+                        if verbose:
+                            print(f"移除边: ({cycle[-2]}, {cycle[-1]})")
 
         for parent_id, prep, obj_names in inputs:
             objs = [get_object_from_scene_graph(obj, self.scene_graph["objects_in_room"]) for obj in obj_names]
@@ -245,12 +274,20 @@ class IDesign:
             # Check whether the relationships are valid
             invalid_name_ids = []
             for child in new_relationships["children_objects"]:
-                for other_child in child["placement"]["children_objects"]:
-                    other_child_rot = get_rotation(get_object_from_scene_graph(other_child["name_id"], self.scene_graph["objects_in_room"]), self.scene_graph["objects_in_room"])
-                    if direction_check(other_child_rot - parent_obj_rot, prep) and other_child["preposition"] not in ["in front", "behind"]:
-                        invalid_name_ids.append(child["name_id"])
-                    elif not direction_check(other_child_rot - parent_obj_rot, prep) and other_child["preposition"] not in ["left of", "right of"]:
-                        invalid_name_ids.append(child["name_id"])
+                try:
+                    for other_child in child["placement"]["children_objects"]:
+                        try:
+                            other_child_rot = get_rotation(get_object_from_scene_graph(other_child["name_id"], self.scene_graph["objects_in_room"]), self.scene_graph["objects_in_room"])
+                            if direction_check(other_child_rot - parent_obj_rot, prep) and other_child["preposition"] not in ["in front", "behind"]:
+                                invalid_name_ids.append(child["name_id"])
+                            elif not direction_check(other_child_rot - parent_obj_rot, prep) and other_child["preposition"] not in ["left of", "right of"]:
+                                invalid_name_ids.append(child["name_id"])
+                        except Exception as e:
+                            print(f"Warning: Error processing child object {other_child.get('name_id', 'unknown')}: {str(e)}")
+                            continue
+                except Exception as e:
+                    print(f"Warning: Error processing object {child.get('name_id', 'unknown')}: {str(e)}")
+                    continue
 
             if verbose:
                 print("Invalid name IDs: ", invalid_name_ids)
@@ -268,20 +305,26 @@ class IDesign:
                 "behind" : "in front",
             }
 
-
             for obj in new_relationships["children_objects"]:
                 name_id = obj["name_id"]
                 rel = obj["placement"]["children_objects"]
                 for r in rel:
-                    if (name_id, r["name_id"]) in edges:
-                        to_flip = edges_to_flip[(name_id, r["name_id"])]
-                        if to_flip:
-                            corr_obj = get_object_from_scene_graph(r["name_id"], self.scene_graph["objects_in_room"])
-                            corr_prep = prep_correspondences[r["preposition"]]
-                            corr_obj["placement"]["objects_in_room"].append({"object_id" : name_id, "preposition" : corr_prep, "is_adjacent" : r["is_adjacent"]})
-                        else:
-                            corr_obj = get_object_from_scene_graph(name_id, self.scene_graph["objects_in_room"])
-                            corr_obj["placement"]["objects_in_room"].append({"object_id" : r["name_id"], "preposition" : r["preposition"], "is_adjacent" : r["is_adjacent"]})
+                    edge = (name_id, r["name_id"])
+                    if edge in edges:
+                        try:
+                            to_flip = edges_to_flip[edge]
+                            if to_flip:
+                                corr_obj = get_object_from_scene_graph(r["name_id"], self.scene_graph["objects_in_room"])
+                                corr_prep = prep_correspondences[r["preposition"]]
+                                corr_obj["placement"]["objects_in_room"].append({"object_id": name_id, "preposition": corr_prep, "is_adjacent": r["is_adjacent"]})
+                            else:
+                                corr_obj = get_object_from_scene_graph(name_id, self.scene_graph["objects_in_room"])
+                                corr_obj["placement"]["objects_in_room"].append({"object_id": r["name_id"], "preposition": r["preposition"], "is_adjacent": r["is_adjacent"]})
+                        except KeyError:
+                            if verbose:
+                                print(f"Warning: Edge {edge} not in edges_to_flip dictionary, skipping this relationship")
+                            continue
+
 
     def create_object_clusters(self, verbose=False):
         # Assign the rotations
@@ -307,7 +350,11 @@ class IDesign:
                 cluster_size = {"x_neg" : cluster_size["left of"], "x_pos" : cluster_size["right of"], "y_neg" : cluster_size["behind"], "y_pos" : cluster_size["in front"]}
                 node_obj["cluster"] = {"constraint_area" : cluster_size}
 
-    def backtrack(self, verbose=False):
+    def backtrack(self, verbose=False, max_retries=10):
+        print("\n=== Starting backtrack with max_retries:", max_retries, "===")
+        retry_count = 0
+        successful_placements = {}  # 记录成功放置的物体
+        
         self.scene_graph = self.scene_graph["objects_in_room"] + self.room_priors
         prior_ids = ["south_wall", "north_wall", "east_wall", "west_wall", "ceiling", "middle of the room"]
         
@@ -318,7 +365,6 @@ class IDesign:
             if item["new_object_id"] in prior_ids:
                 continue
             possible_pos = get_possible_positions(item["new_object_id"], self.scene_graph, self.room_dimensions)
-            # Determine the overlap based on the possible positions
             overlap = None
             if len(possible_pos) == 1:
                 overlap = possible_pos[0]
@@ -326,13 +372,14 @@ class IDesign:
                 overlap = possible_pos[0]
                 for pos in possible_pos[1:]:
                     overlap = calculate_overlap(overlap, pos)
-            # If the overlap is a point bbox, assign the position
             if overlap is not None and is_point_bbox(overlap) and len(possible_pos) > 0:
                 item["position"] = {"x" : overlap[0], "y" : overlap[2], "z" : overlap[4]}
                 point_bbox[item["new_object_id"]] = True
+                successful_placements[item["new_object_id"]] = item["position"]
         
         scene_graph_wo_layout = [item for item in self.scene_graph if item["new_object_id"] not in prior_ids]
         object_ids = [item["new_object_id"] for item in scene_graph_wo_layout]
+        
         # Get depths
         depth_scene_graph = get_depth(scene_graph_wo_layout)
         max_depth = max(depth_scene_graph.values())
@@ -341,10 +388,6 @@ class IDesign:
             print("Max depth: ", max_depth)
             print("Depth scene graph: ", depth_scene_graph)
             print("Point BBox: ", [key for key, value in point_bbox.items() if value])
-            get_visualization(self.scene_graph, self.room_priors)
-            for obj in scene_graph_wo_layout:
-                if "position" in obj.keys():
-                    print(obj["new_object_id"], obj["position"])
         
         topological_order = get_topological_ordering(scene_graph_wo_layout)
         topological_order = [item for item in topological_order if item not in prior_ids]
@@ -367,13 +410,29 @@ class IDesign:
                 if point_bbox[node]:
                     continue
                 
+                # 如果物体已经成功放置过，使用之前的位置
+                if node in successful_placements:
+                    obj = next(item for item in scene_graph_wo_layout if item["new_object_id"] == node)
+                    obj["position"] = successful_placements[node]
+                    continue
+                
                 # Find the object corresponding to the current node
-                obj = next(item for item in scene_graph_wo_layout if item["new_object_id"] == node)
+                try:
+                    obj = next(item for item in scene_graph_wo_layout if item["new_object_id"] == node)
+                except StopIteration:
+                    print(f"Warning: Object {node} not found in scene graph")
+                    continue
+                
                 errors = place_object(obj, self.scene_graph, self.room_dimensions, errors={}, verbose=verbose)
                 if verbose:
                     print(f"Errors for {obj['new_object_id']}:", errors)
 
                 if errors:
+                    retry_count += 1
+                    if retry_count >= max_retries:
+                        print(f"\nReached maximum retries ({max_retries}). Stopping backtrack.")
+                        return
+                        
                     if d > 1:
                         d -= 1
                         if verbose:
@@ -389,11 +448,16 @@ class IDesign:
                                 del del_item["position"]
                     errors = {}
                     break
+                else:
+                    # 如果成功放置，记录位置
+                    if "position" in obj:
+                        successful_placements[obj["new_object_id"]] = obj["position"]
                             
             if not error_flag:
                 d += 1
         if verbose:
-            get_visualization(self.scene_graph, self.room_priors)
+            print("Gochat!")
+            #get_visualization(self.scene_graph, self.room_priors)
     
     def to_json(self, filename="scene_graph.json"):
         # Save the scene graph to a json file

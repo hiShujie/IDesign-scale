@@ -1,3 +1,9 @@
+import sys
+import os
+
+# 添加当前目录到Python路径
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import networkx as nx
 from matplotlib import pyplot as plt
 import numpy as np
@@ -709,56 +715,56 @@ def find_non_tree_edges(graph, root_node):
             non_tree_edges.append(edge)
     return non_tree_edges
         
-def clean_and_extract_edges(relationships, parent_id, verbose):
+def clean_and_extract_edges(new_relationships, parent_id, verbose=False):
     # Build the graph
     dag = nx.DiGraph()
 
-    for obj in relationships["children_objects"]:
+    for obj in new_relationships["children_objects"]:
         if obj["name_id"] != parent_id:
             dag.add_node(obj["name_id"])
-    for obj in relationships["children_objects"]:
+    for obj in new_relationships["children_objects"]:
         if obj["name_id"] != parent_id:
             for rel in obj["placement"]["children_objects"]:
                 if rel["name_id"] != parent_id:
                     dag.add_edge(obj["name_id"], rel["name_id"], weight=int(rel["is_adjacent"]))
-        
 
-    # Find cycles and remove them from the DAG
+    # Find and remove cycles
     if verbose:
         print("Simple cycles: ", list(nx.simple_cycles(dag)))
+    
+    # 强制移除所有循环边
     while len(list(nx.simple_cycles(dag))) > 0:
         cycles = list(nx.simple_cycles(dag))
-        dag.remove_edge(cycles[0][-1], cycles[0][0])
+        for cycle in cycles:
+            if len(cycle) > 1:
+                if dag.has_edge(cycle[-1], cycle[0]):  # 添加边的存在性检查
+                    dag.remove_edge(cycle[-1], cycle[0])
+                    if verbose:
+                        print(f"Removed edge: {cycle[-1]} -> {cycle[0]}")
+                else:
+                    if verbose:
+                        print(f"Warning: Edge {cycle[-1]} -> {cycle[0]} not in graph")
 
     if verbose:
-        plt.subplot(121)
-        pos_original = nx.spring_layout(dag)
-        nx.draw(dag, pos_original, with_labels=True, font_weight='bold', node_size=700, arrowsize=20)
-        plt.title("Original Graph")
-        plt.show()
-
-    dag = remove_edges_with_connectivity(dag, verbose)
+        print("Edges after cycle removal:", dag.edges(data=True))
     
-    print("Edges remaining: ", dag.edges(data=True))
+    # 确保图是连通的
+    if not nx.is_weakly_connected(dag):
+        # 如果图不连通，添加必要的边使其连通
+        components = list(nx.weakly_connected_components(dag))
+        for i in range(len(components)-1):
+            node1 = list(components[i])[0]
+            node2 = list(components[i+1])[0]
+            # 检查边是否已存在
+            if not dag.has_edge(node1, node2):
+                dag.add_edge(node1, node2, weight=0)
+                if verbose:
+                    print(f"Added connecting edge: {node1} -> {node2}")
+            else:
+                if verbose:
+                    print(f"Edge {node1} -> {node2} already exists")
 
-    # binary_tree, flipped_edges = flip_edges_to_binary_tree(dag, list(dag.nodes())[0], verbose)
-    binary_tree, flipped_edges = flip_edges(dag, list(dag.nodes())[0], verbose)
-    if binary_tree and verbose:
-        # Visualize the original graph and the obtained binary tree
-        pos_original = nx.spring_layout(dag)
-        pos_binary_tree = nx.spring_layout(binary_tree)
-
-        plt.subplot(121)
-        nx.draw(dag, pos_original, with_labels=True, font_weight='bold', node_size=700, arrowsize=20)
-        plt.title("Original Graph")
-
-        plt.subplot(122)
-        nx.draw(binary_tree, pos_binary_tree, with_labels=True, font_weight='bold', node_size=700, arrowsize=20)
-        plt.title("Binary Tree")
-
-        plt.show()
-
-    return binary_tree.edges(), flipped_edges
+    return dag.edges(), {}
 
 def create_empty_image_with_boxes(image_size, boxes):
     img = np.zeros((image_size[0], image_size[1], 3), dtype=np.uint8)
@@ -774,7 +780,8 @@ def create_empty_image_with_boxes(image_size, boxes):
             cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
         cv2.putText(img, label, (x, y - 10), cv2.FONT_ITALIC , 0.5, (255, 255, 255), 1)
     cv2.imshow("image", img) 
-    key = cv2.waitKey(0)
+    print("image show completed")
+    key = cv2.waitKey(1)
 
 def get_visualization(scene_graph, room_priors=None):
     visual_scene_graph = [
@@ -789,7 +796,9 @@ def get_visualization(scene_graph, room_priors=None):
         for item in scene_graph if "position" in item.keys()
     ]
     #TODO : Adjust visualization window size according to the room size
+    print("visualize start")
     create_empty_image_with_boxes((800, 800), visual_scene_graph)
+    print("visualize end")
 
 def calculate_overlap(box1, box2):
     if box1 is None or box2 is None:
@@ -927,7 +936,14 @@ def get_possible_positions(object_id, scene_graph, room_dimensions):
         is_on_floor = obj["is_on_the_floor"]
         obj_A = obj
         key = "layout_element_id" if "layout_element_id" in constraint.keys() else "object_id"
-        obj_B = [element for element in scene_graph if element.get("new_object_id") == constraint[key]][0]
+        
+        # 查找匹配的对象
+        matching_objects = [element for element in scene_graph if element.get("new_object_id") == constraint[key]]
+        if not matching_objects:
+            print(f"Warning: Could not find object with ID {constraint[key]}")
+            continue
+            
+        obj_B = matching_objects[0]
         if "position" in obj_B.keys():
             possible_positions.append(func_map[prep](obj_A, obj_B, adjacency, is_on_floor, room_dimensions))
 
@@ -986,8 +1002,8 @@ def get_no_overlap_reason(obj, positions, cluster_constraint=None, errors={}):
     return errors
 
 def place_object(obj, scene_graph, room_dimensions, errors={}, verbose=False):
-    if verbose:
-        get_visualization(scene_graph)
+    # if verbose:
+    #     get_visualization(scene_graph)
     if not any(d.get("new_object_id") == obj["new_object_id"] for d in scene_graph):
         return errors
     positions = get_possible_positions(obj["new_object_id"], scene_graph, room_dimensions)
@@ -1059,18 +1075,25 @@ def place_object(obj, scene_graph, room_dimensions, errors={}, verbose=False):
     while True:
         counter += 1
         if counter > 50:
+            print("---------------------!!!!!!!!!!!!!!!!!!!!!!!!----------------------")
             if verbose:
                 print("No positions found for object: ", obj["new_object_id"])
                 print(overlap)
             del obj["position"]
-            # If there wasn't any errors, it means that the object was colliding with other objects
-            if not errors:
-                key = ("no_positions_found", obj["new_object_id"])
-                errors[key] = 1 + errors.get(key, 0)
-                # Updated: Just delete the object
-                # print("OBJECT DELETED!!")
-                # scene_graph.remove(obj)
+
+
+            if errors:
+                scene_graph.remove(obj)
+                print("ERRORS: ", errors)
+                return errors
+            
+            key = ("placement_failed_due_to_collision", obj["new_object_id"])
+            errors[key] = 1
+            if verbose:
+                print(f"Object {obj['new_object_id']} deleted due to collision with other objects")
+            scene_graph.remove(obj)
             return errors
+            
         if is_point_bbox(overlap):
             counter = 50
         x = random.uniform(overlap[0], overlap[1])
@@ -1081,6 +1104,7 @@ def place_object(obj, scene_graph, room_dimensions, errors={}, verbose=False):
             "y" : y,
             "z" : z
         }
+        print("Counter:", counter)
         if verbose:
             print("Assigned position: ", obj["position"], " to object: ", obj["new_object_id"])
         flag = False

@@ -39,7 +39,7 @@ cd openshape-demo-support
 pip install -e .
 cd ..
 ```
-**Add the prompt you want to run in `prompt.txt` and run IDesign.sh!**
+**Add the prompt you want to run in `prompt.txt` and run `IDesign.sh`!**
 
 ## Evaluation
 After creating scene renders in Blender, you can use the GPT-V evaluator to generate grades for evaluation. Fill in the necessary variables denoted with TODO and run the script
@@ -49,3 +49,5 @@ python gpt_v_as_evaluator.py
 
 ## Results
 ![gallery](imgs/gallery.jpg)
+
+ps: this code will save final blender file in `results`.

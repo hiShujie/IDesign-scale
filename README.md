@@ -1,4 +1,4 @@
-# IDesign
+# IDesign-scale
 It's an updated version of [*I-Design: Personalized LLM Interior Designer*](https://atcelen.github.io/I-Design/) that can process multiple prompts 🎊**in one run**🎊.
 
 > Following are adapted from the instructions of [I-Design](https://atcelen.github.io/I-Design/).
@@ -48,6 +48,6 @@ python gpt_v_as_evaluator.py
 ```
 
 ## Results
-![gallery](imgs/gallery.jpg)
+![gallery](imgs/gallery.png)
 
 ps: this code will save final blender file in `results`.
